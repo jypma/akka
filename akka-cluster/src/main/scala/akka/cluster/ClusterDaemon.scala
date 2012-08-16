@@ -88,6 +88,8 @@ private[cluster] object InternalClusterAction {
 
   case object PublishStatsTick extends Tick
 
+  case object MetricsTick extends Tick
+
   case class SendClusterMessage(to: Address, msg: ClusterMessage)
 
   case class SendGossipTo(address: Address)
@@ -134,6 +136,7 @@ private[cluster] trait ClusterEnvironment {
   private[cluster] def scheduler: Scheduler
   private[cluster] def seedNodes: IndexedSeq[Address]
   private[cluster] def shutdown(): Unit
+  def subscribe(subscriber: ActorRef, to: Class[_]): Unit
 }
 
 /**
@@ -148,6 +151,8 @@ private[cluster] final class ClusterDaemon(environment: ClusterEnvironment) exte
     withDispatcher(configuredDispatcher), name = "core")
   val heartbeat = context.actorOf(Props(new ClusterHeartbeatDaemon(environment)).
     withDispatcher(configuredDispatcher), name = "heartbeat")
+  val healthMonitor = context.actorOf(Props(new ClusterNodeMetricsCollector(environment)).
+    withDispatcher(configuredDispatcher), name = "metricsCollector")
 
   def receive = {
     case InternalClusterAction.GetClusterCoreRef ⇒ sender ! core
@@ -880,6 +885,112 @@ private[cluster] final class ClusterCoreDaemon(environment: ClusterEnvironment) 
 
 /**
  * INTERNAL API.
+ */
+private[cluster] final class ClusterNodeMetricsCollector(environment: ClusterEnvironment) extends Actor with ActorLogging {
+  import InternalClusterAction._
+  import ClusterEvent._
+
+  val settings = environment.settings
+  import settings._
+  import context.dispatcher
+
+  // start periodic gossip to random nodes in cluster
+  val gossipTask =
+    FixedRateTask(environment.scheduler, PeriodicTasksInitialDelay.max(MetricsGossipInterval), MetricsGossipInterval) {
+      self ! GossipTick
+    }
+
+  // start periodic metrics collection
+  val metricsTask =
+    FixedRateTask(environment.scheduler, PeriodicTasksInitialDelay.max(MetricsDetectorInterval), MetricsDetectorInterval) {
+      self ! MetricsTick
+    }
+
+  var members: SortedSet[Member] = SortedSet.empty
+  var latestGossip: MetricsGossip = MetricsGossip(Map.empty)
+
+  override def preStart(): Unit = environment.subscribe(self, classOf[MembersChanged])
+
+  override def postStop(): Unit = {
+    gossipTask.cancel()
+    metricsTask.cancel()
+  }
+
+  def selfAddress = environment.selfAddress
+
+  def receive = {
+    case msg: MetricsGossipEnvelope ⇒ receiveGossip(msg)
+    case GossipTick                 ⇒ gossip()
+    case MetricsTick                ⇒ collectMetrics()
+    case MembersChanged(m)          ⇒ members = m
+    case state: CurrentClusterState ⇒ members = state.members
+  }
+
+  def receiveGossip(envelope: MetricsGossipEnvelope): Unit = {
+    val from = envelope.from
+    val remoteGossip = envelope.gossip
+    val localGossip = latestGossip
+
+    if (remoteGossip != latestGossip) {
+      // TODO might do some clever merging based on the NodeMetrics timestamps
+      latestGossip = latestGossip.copy(data = latestGossip.data ++ remoteGossip.data)
+
+      // publish to the local event bus
+      publish()
+
+      // send back gossip to sender when sender had different view
+      gossipTo(from)
+    }
+  }
+
+  def gossip(): Unit = {
+    // important to not accidentally use `map` of the SortedSet, since the original order is not preserved)
+    val addresses = members.toIndexedSeq.map(_.address)
+    val peer = selectRandomNode(addresses filterNot (_ == selfAddress))
+    peer foreach gossipTo
+  }
+
+  def gossipTo(address: Address): Unit = {
+    val msg = MetricsGossipEnvelope(selfAddress, latestGossip)
+    context.system.actorFor(self.path.toStringWithAddress(address)) ! msg
+  }
+
+  def selectRandomNode(addresses: IndexedSeq[Address]): Option[Address] =
+    if (addresses.isEmpty) None
+    else Some(addresses(ThreadLocalRandom.current nextInt addresses.size))
+
+  def publish(): Unit = {
+    eventStream publish MetricsChanged(latestGossip.data)
+  }
+
+  def eventStream: EventStream = context.system.eventStream
+
+  def collectMetrics(): Unit = {
+    val nodeMetrics = NodeMetrics(System.currentTimeMillis)
+    latestGossip = latestGossip.copy(data = latestGossip.data + (selfAddress -> nodeMetrics))
+    // publish to the local event bus
+    publish()
+  }
+}
+
+/**
+ * INTERNAL API
+ * Envelope adding a sender address to the gossip.
+ */
+private[cluster] case class MetricsGossipEnvelope(from: Address, gossip: MetricsGossip) extends ClusterMessage
+
+/**
+ * INTERNAL API
+ */
+private[cluster] case class MetricsGossip(data: Map[Address, NodeMetrics])
+
+/**
+ * INTERNAL API
+ */
+private[cluster] case class NodeMetrics(timestamp: Long)
+
+/**
+ * INTERNAL API.
  *
  * Sends InitJoinAck to all seed nodes (except itself) and expect
  * InitJoinAck reply back. The seed node that replied first
@@ -984,6 +1095,8 @@ object ClusterEvent {
    * INTERNAL API
    */
   private[cluster] case class CurrentInternalStats(stats: ClusterStats) extends ClusterDomainEvent
+
+  case class MetricsChanged(data: Map[Address, NodeMetrics])
 
 }
 

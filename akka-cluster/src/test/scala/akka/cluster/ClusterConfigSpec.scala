@@ -28,6 +28,7 @@ class ClusterConfigSpec extends AkkaSpec {
       SeedNodeTimeout must be(5 seconds)
       PeriodicTasksInitialDelay must be(1 seconds)
       GossipInterval must be(1 second)
+      MetricsGossipInterval must be(1 second)
       HeartbeatInterval must be(1 second)
       LeaderActionsInterval must be(1 second)
       UnreachableNodesReaperInterval must be(1 second)
