@@ -73,7 +73,7 @@ object AkkaBuild extends Build {
       sphinxLatex <<= sphinxLatex in LocalProject(docs.id) map identity,
       sphinxPdf <<= sphinxPdf in LocalProject(docs.id) map identity
     ),
-    aggregate = Seq(actor, testkit, actorTests, dataflow, remote, remoteTests, camel, cluster, slf4j, agent, transactor, mailboxes, zeroMQ, kernel, akkaSbtPlugin, samples, tutorials, osgi, osgiAries, docs)
+    aggregate = Seq(actor, testkit, actorTests, dataflow, remote, remoteTests, camel, cluster, slf4j, /*agent, transactor,*/ mailboxes, /*zeroMQ,*/ kernel, akkaSbtPlugin, samples, tutorials, osgi, osgiAries, docs)
   )
 
   lazy val actor = Project(
@@ -174,25 +174,25 @@ object AkkaBuild extends Build {
     )
   )
 
-  lazy val agent = Project(
-    id = "akka-agent",
-    base = file("akka-agent"),
-    dependencies = Seq(actor, testkit % "test->test"),
-    settings = defaultSettings ++ OSGi.agent ++ Seq(
-      libraryDependencies ++= Dependencies.agent,
-      previousArtifact := akkaPreviousArtifact("akka-agent")
-    )
-  )
-
-  lazy val transactor = Project(
-    id = "akka-transactor",
-    base = file("akka-transactor"),
-    dependencies = Seq(actor, testkit % "test->test"),
-    settings = defaultSettings ++ OSGi.transactor ++ Seq(
-      libraryDependencies ++= Dependencies.transactor,
-      previousArtifact := akkaPreviousArtifact("akka-transactor")
-    )
-  )
+//  lazy val agent = Project(
+//    id = "akka-agent",
+//    base = file("akka-agent"),
+//    dependencies = Seq(actor, testkit % "test->test"),
+//    settings = defaultSettings ++ OSGi.agent ++ Seq(
+//      libraryDependencies ++= Dependencies.agent,
+//      previousArtifact := akkaPreviousArtifact("akka-agent")
+//    )
+//  )
+//
+//  lazy val transactor = Project(
+//    id = "akka-transactor",
+//    base = file("akka-transactor"),
+//    dependencies = Seq(actor, testkit % "test->test"),
+//    settings = defaultSettings ++ OSGi.transactor ++ Seq(
+//      libraryDependencies ++= Dependencies.transactor,
+//      previousArtifact := akkaPreviousArtifact("akka-transactor")
+//    )
+//  )
 
   val testMailbox = SettingKey[Boolean]("test-mailbox")
 
@@ -225,15 +225,15 @@ object AkkaBuild extends Build {
     )
   )
 
-  lazy val zeroMQ = Project(
-    id = "akka-zeromq",
-    base = file("akka-zeromq"),
-    dependencies = Seq(actor, testkit % "test;test->test"),
-    settings = defaultSettings ++ OSGi.zeroMQ ++ Seq(
-      libraryDependencies ++= Dependencies.zeroMQ,
-      previousArtifact := akkaPreviousArtifact("akka-zeromq")
-    )
-  )
+//  lazy val zeroMQ = Project(
+//    id = "akka-zeromq",
+//    base = file("akka-zeromq"),
+//    dependencies = Seq(actor, testkit % "test;test->test"),
+//    settings = defaultSettings ++ OSGi.zeroMQ ++ Seq(
+//      libraryDependencies ++= Dependencies.zeroMQ,
+//      previousArtifact := akkaPreviousArtifact("akka-zeromq")
+//    )
+//  )
 
   lazy val kernel = Project(
     id = "akka-kernel",
@@ -355,7 +355,7 @@ object AkkaBuild extends Build {
     id = "akka-docs",
     base = file("akka-docs"),
     dependencies = Seq(actor, testkit % "test->test", mailboxesCommon % "compile;test->test",
-      remote, cluster, slf4j, agent, transactor, fileMailbox, zeroMQ, camel, osgi, osgiAries),
+      remote, cluster, slf4j, /*agent, transactor,*/ fileMailbox, /*zeroMQ,*/ camel, osgi, osgiAries),
     settings = defaultSettings ++ Sphinx.settings ++ Seq(
       unmanagedSourceDirectories in Test <<= baseDirectory { _ ** "code" get },
       libraryDependencies ++= Dependencies.docs,
